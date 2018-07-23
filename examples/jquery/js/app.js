@@ -38,9 +38,78 @@ jQuery(function ($) {
 		}
 	};
 
+	var todos = {
+		_data = [],
+		add: function(todoText, completed = false) {
+			if (!Boolean(completed)) {
+				throw new TypeError('Second argument must be a boolean'); 
+			}
+
+			this._data.push({
+				id: util.uuid(),
+				title: todoText,
+				completed: completed
+			});
+			this.saveToDisk();
+		},
+		delete: function(index) {
+			if (!index) {
+				throw new RangeError('An argument is required')
+			}
+			if(!Number(index)) {
+				throw new TypeError('Argument must be a number'); 
+			}
+
+			if (index && index <= _data.length - 1) {
+				_data.splice(index, 1);
+			} else {
+				throw new RangeError('Argument must be a valid index');
+			}
+
+			this.saveToDisk();
+		},
+		deleteAll: function() {
+			this._data = [];
+			this.saveToDisk();
+		},
+		toggle: function(index) {
+			if (!index) {
+				throw RangeError ('An argument is required')
+			}
+
+			if (index <= _data.length - 1) {
+				this._data[index].completed = !this._data[index].completed;
+			} else {
+				throw RangeError ('Argument must be a valid index')
+			}
+			this.saveToDisk();
+		},
+		toggleAll: function(value) {
+			if (!value) {
+				throw new RangeError('An argument is required')
+			}
+			if (!Boolean(value)) {
+				throw new RangeError('Argument must be a Boolean');
+			}
+
+			this._data.forEach(function (todo) {
+				todo.completed = value;
+			});
+			this.saveToDisk();
+		},
+		saveToDisk: function() {
+			util.store('todos-jquery', this._data);
+		},
+		loadFromDisk: function() {
+			_data = util.store('todos-jquery');;
+		}
+
+	};
+
 	var App = {
 		init: function () {
 			this.todos = util.store('todos-jquery');
+			//this.todos.loadFromDisk();
 			this.todoTemplate = Handlebars.compile($('#todo-template').html());
 			this.footerTemplate = Handlebars.compile($('#footer-template').html());
 			this.bindEvents();
@@ -48,7 +117,7 @@ jQuery(function ($) {
 			new Router({
 				'/:filter': function (filter) {
 					this.filter = filter;
-					this.render();
+					this.render(this.getFilteredTodos());
 				}.bind(this)
 			}).init('/all');
 		},
@@ -63,8 +132,7 @@ jQuery(function ($) {
 				.on('focusout', '.edit', this.update.bind(this))
 				.on('click', '.destroy', this.destroy.bind(this));
 		},
-		render: function () {
-			var todos = this.getFilteredTodos();
+		render: function (todos) {
 			$('#todo-list').html(this.todoTemplate(todos));
 			$('#main').toggle(todos.length > 0);
 			$('#toggle-all').prop('checked', this.getActiveTodos().length === 0);
@@ -89,8 +157,9 @@ jQuery(function ($) {
 			this.todos.forEach(function (todo) {
 				todo.completed = isChecked;
 			});
+			// this.todos.toggle(isChecked)
 			this.saveDataToDisk();
-			this.render();
+			this.render(this.getFilteredTodos());
 		},
 		getActiveTodos: function () {
 			return this.todos.filter(function (todo) {
@@ -117,7 +186,7 @@ jQuery(function ($) {
 			this.todos = this.getActiveTodos();
 			this.filter = 'all';
 			this.saveDataToDisk();
-			this.render();
+			this.render(this.getFilteredTodos());
 		},
 		// accepts an element from inside the `.item` div and
 		// returns the corresponding index in the `todos` array
@@ -145,17 +214,18 @@ jQuery(function ($) {
 				title: val,
 				completed: false
 			});
+			// this.todos.add(val);
 
 			$input.val('');
 
 			this.saveDataToDisk();
-			this.render();
+			this.render(this.getFilteredTodos());
 		},
 		toggle: function (e) {
 			var i = this.indexFromEl(e.target);
 			this.todos[i].completed = !this.todos[i].completed;
 			this.saveDataToDisk();
-			this.render();
+			this.render(this.getFilteredTodos());
 		},
 		edit: function (e) {
 			var $input = $(e.target).closest('li').addClass('editing').find('.edit');
@@ -186,12 +256,12 @@ jQuery(function ($) {
 				this.todos[this.indexFromEl(el)].title = val;
 			}
 			this.saveDataToDisk();
-			this.render();
+			this.render(this.getFilteredTodos());
 		},
 		destroy: function (e) {
 			this.todos.splice(this.indexFromEl(e.target), 1);
-			
-			this.render();
+			//this.todos.delete(this.indexFromEl(e.target));
+			this.render(this.getFilteredTodos());
 		},
 		saveDataToDisk: function () {
 			util.store('todos-jquery', this.todos);
