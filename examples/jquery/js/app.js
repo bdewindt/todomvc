@@ -39,9 +39,10 @@ jQuery(function ($) {
 	};
 
 	var todos = {
-		_data = [],
+		_data: [],
+		filter: "all",
 		add: function(todoText, completed = false) {
-			if (!Boolean(completed)) {
+			if (typeof(completed) != "boolean") {
 				throw new TypeError('Second argument must be a boolean'); 
 			}
 
@@ -52,16 +53,20 @@ jQuery(function ($) {
 			});
 			this.saveToDisk();
 		},
+		update: function(index, value) {
+			this._data[index].title = value;
+			this.saveToDisk();
+		},
 		delete: function(index) {
-			if (!index) {
+			if (index == null) {
 				throw new RangeError('An argument is required')
 			}
-			if(!Number(index)) {
+			if(typeof(index) != "number") {
 				throw new TypeError('Argument must be a number'); 
 			}
 
-			if (index && index <= _data.length - 1) {
-				_data.splice(index, 1);
+			if (index <= this._data.length - 1) {
+				this._data.splice(index, 1);
 			} else {
 				throw new RangeError('Argument must be a valid index');
 			}
@@ -72,12 +77,17 @@ jQuery(function ($) {
 			this._data = [];
 			this.saveToDisk();
 		},
+		deleteCompleted: function () {
+			this._data = this.activeTodos();
+			this.filter = 'all';
+			this.saveToDisk();
+		},
 		toggle: function(index) {
-			if (!index) {
+			if (index == null) {
 				throw RangeError ('An argument is required')
 			}
 
-			if (index <= _data.length - 1) {
+			if (index <= this._data.length - 1) {
 				this._data[index].completed = !this._data[index].completed;
 			} else {
 				throw RangeError ('Argument must be a valid index')
@@ -85,10 +95,10 @@ jQuery(function ($) {
 			this.saveToDisk();
 		},
 		toggleAll: function(value) {
-			if (!value) {
+			if (value == null) {
 				throw new RangeError('An argument is required')
 			}
-			if (!Boolean(value)) {
+			if (typeof(value) != "boolean") {
 				throw new RangeError('Argument must be a Boolean');
 			}
 
@@ -97,27 +107,47 @@ jQuery(function ($) {
 			});
 			this.saveToDisk();
 		},
+		activeTodos: function () {
+			return this._data.filter(function (todo) {
+				return !todo.completed;
+			});
+		},
+		completedTodos: function () {
+			return this._data.filter(function (todo) {
+				return todo.completed;
+			});
+		},
+		filteredTodos: function () {
+			if (this.filter === 'active') {
+				return this.activeTodos();
+			}
+
+			if (this.filter === 'completed') {
+				return this.completedTodos();
+			}
+
+			return this._data;
+		},
 		saveToDisk: function() {
 			util.store('todos-jquery', this._data);
 		},
 		loadFromDisk: function() {
-			_data = util.store('todos-jquery');;
+			this._data = util.store('todos-jquery');;
 		}
 
 	};
 
 	var App = {
 		init: function () {
-			this.todos = util.store('todos-jquery');
-			//this.todos.loadFromDisk();
+			todos.loadFromDisk();
 			this.todoTemplate = Handlebars.compile($('#todo-template').html());
 			this.footerTemplate = Handlebars.compile($('#footer-template').html());
 			this.bindEvents();
 
 			new Router({
 				'/:filter': function (filter) {
-					this.filter = filter;
-					this.render(this.getFilteredTodos());
+					todos.filter = filter;
+					this.render();
 				}.bind(this)
 			}).init('/all');
 		},
@@ -132,16 +162,17 @@ jQuery(function ($) {
 				.on('focusout', '.edit', this.update.bind(this))
 				.on('click', '.destroy', this.destroy.bind(this));
 		},
-		render: function (todos) {
-			$('#todo-list').html(this.todoTemplate(todos));
-			$('#main').toggle(todos.length > 0);
-			$('#toggle-all').prop('checked', this.getActiveTodos().length === 0);
+		render: function (list) {
+			list = todos.filteredTodos() 
+			$('#todo-list').html(this.todoTemplate(list));
+			$('#main').toggle(list.length > 0);
+			$('#toggle-all').prop('checked', todos.activeTodos().length === 0);
 			this.renderFooter();
 			$('#new-todo').focus();
 		},
 		renderFooter: function () {
-			var todoCount = this.todos.length;
-			var activeTodoCount = this.getActiveTodos().length;
+			var todoCount = todos._data.length;
+			var activeTodoCount = todos.activeTodos().length;
 			var template = this.footerTemplate({
 				activeTodoCount: activeTodoCount,
 				activeTodoWord: util.pluralize(activeTodoCount, 'item'),
@@ -151,52 +182,19 @@ jQuery(function ($) {
 
 			$('#footer').toggle(todoCount > 0).html(template);
 		},
-		toggleAll: function (e) {
-			var isChecked = $(e.target).prop('checked');
-
-			this.todos.forEach(function (todo) {
-				todo.completed = isChecked;
-			});
-			// this.todos.toggle(isChecked)
-			this.saveDataToDisk();
-			this.render(this.getFilteredTodos());
-		},
-		getActiveTodos: function () {
-			return this.todos.filter(function (todo) {
-				return !todo.completed;
-			});
-		},
-		getCompletedTodos: function () {
-			return this.todos.filter(function (todo) {
-				return todo.completed;
-			});
-		},
-		getFilteredTodos: function () {
-			if (this.filter === 'active') {
-				return this.getActiveTodos();
-			}
-
-			if (this.filter === 'completed') {
-				return this.getCompletedTodos();
-			}
-
-			return this.todos;
-		},
 		destroyCompleted: function () {
-			this.todos = this.getActiveTodos();
-			this.filter = 'all';
-			this.saveDataToDisk();
-			this.render(this.getFilteredTodos());
+			todos.deleteCompleted();
+			this.render();
 		},
 		// accepts an element from inside the `.item` div and
 		// returns the corresponding index in the `todos` array
 		indexFromEl: function (el) {
 			var id = $(el).closest('li').data('id');
-			var todos = this.todos;
-			var i = todos.length;
+			var list = todos._data;
+			var i = list.length;
 
 			while (i--) {
-				if (todos[i].id === id) {
+				if (list[i].id === id) {
 					return i;
 				}
 			}
@@ -209,24 +207,24 @@ jQuery(function ($) {
 				return;
 			}
 
-			this.todos.push({
-				id: util.uuid(),
-				title: val,
-				completed: false
-			});
-			// this.todos.add(val);
+			todos.add(val);
 
 			$input.val('');
 
-			this.saveDataToDisk();
-			this.render(this.getFilteredTodos());
+			this.render();
 		},
 		toggle: function (e) {
 			var i = this.indexFromEl(e.target);
-			this.todos[i].completed = !this.todos[i].completed;
-			this.saveDataToDisk();
-			this.render(this.getFilteredTodos());
+			todos.toggle(i)
+			this.render();
 		},
+		toggleAll: function (e) {
+			var isChecked = $(e.target).prop('checked');
+
+			todos.toggleAll(isChecked);
+
+			this.render();
+},
 		edit: function (e) {
 			var $input = $(e.target).closest('li').addClass('editing').find('.edit');
 			$input.val($input.val()).focus();
@@ -246,25 +244,20 @@ jQuery(function ($) {
 			var val = $el.val().trim();
 
 			if (!val) {
-				this.destroy(e);
+				todos.delete(e);
 				return;
 			}
 
 			if ($el.data('abort')) {
 				$el.data('abort', false);
 			} else {
-				this.todos[this.indexFromEl(el)].title = val;
+				todos.update(this.indexFromEl(el),val);
 			}
-			this.saveDataToDisk();
-			this.render(this.getFilteredTodos());
+			this.render();
 		},
 		destroy: function (e) {
-			this.todos.splice(this.indexFromEl(e.target), 1);
-			//this.todos.delete(this.indexFromEl(e.target));
-			this.render(this.getFilteredTodos());
-		},
-		saveDataToDisk: function () {
-			util.store('todos-jquery', this.todos);
+			todos.delete(this.indexFromEl(e.target));
+			this.render();
 		}
 	};
 
